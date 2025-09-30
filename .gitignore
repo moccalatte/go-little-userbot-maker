@@ -1,0 +1,20 @@
+# Build artifacts
+bin/
+dist/
+
+# Go
+*.test
+*.out
+
+# Environment files
+.env
+.env.*
+
+# Logs and runtime data
+storage/logs/*
+!storage/logs/.gitkeep
+*.log
+
+# IDE
+.idea/
+.vscode/

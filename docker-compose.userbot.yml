@@ -1,0 +1,49 @@
+services:
+  orchestrator:
+    image: little-userbot-orchestrator:latest
+    build:
+      context: .
+      dockerfile: userbot/Dockerfile
+    restart: always
+    env_file:
+      - .env.userbot
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    volumes:
+      - userbot_logs:/home/app/storage/logs
+    networks:
+      - userbot_net
+
+  db:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_DB: little_userbot
+      POSTGRES_USER: userbot
+      POSTGRES_PASSWORD: userbot
+    volumes:
+      - userbot_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "userbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - userbot_net
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    networks:
+      - userbot_net
+
+networks:
+  userbot_net:
+    external: false
+
+volumes:
+  userbot_logs:
+  userbot_db_data:

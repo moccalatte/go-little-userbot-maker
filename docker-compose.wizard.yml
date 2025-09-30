@@ -1,0 +1,20 @@
+services:
+  wizard:
+    image: little-userbot-wizard:latest
+    build:
+      context: .
+      dockerfile: bot-wizard/Dockerfile
+    restart: always
+    env_file:
+      - .env.wizard
+    volumes:
+      - wizard_logs:/home/app/storage/logs
+    networks:
+      - wizard_net
+
+networks:
+  wizard_net:
+    external: false
+
+volumes:
+  wizard_logs:

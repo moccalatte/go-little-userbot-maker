@@ -1,0 +1,59 @@
+services:
+  wizard:
+    build:
+      context: .
+      dockerfile: bot-wizard/Dockerfile
+    env_file:
+      - .env.wizard
+    volumes:
+      - wizard_logs:/home/app/storage/logs
+    depends_on:
+      - orchestrator
+    networks:
+      - little_userbot
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: userbot/Dockerfile
+    env_file:
+      - .env.userbot
+    volumes:
+      - userbot_logs:/home/app/storage/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    networks:
+      - little_userbot
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: little_userbot
+      POSTGRES_USER: userbot
+      POSTGRES_PASSWORD: userbot
+    volumes:
+      - userbot_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "userbot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - little_userbot
+
+  redis:
+    image: redis:7-alpine
+    networks:
+      - little_userbot
+
+networks:
+  little_userbot:
+    driver: bridge
+
+volumes:
+  wizard_logs:
+  userbot_logs:
+  userbot_db_data:
