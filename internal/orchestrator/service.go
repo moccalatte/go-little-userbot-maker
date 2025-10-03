@@ -12,44 +12,54 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"go-little-userbot-maker/internal/config"
-	"go-little-userbot-maker/internal/storage"
+	orchHttp "go-little-userbot-maker/internal/orchestrator/delivery/http"
+	"go-little-userbot-maker/internal/orchestrator/repository"
+	"go-little-userbot-maker/internal/orchestrator/usecase"
+	"go-little-userbot-maker/pkg/storage"
 )
 
+// Service is the main orchestrator service. It wires up all the components.
 type Service struct {
-	cfg      config.OrchestratorConfig
-	log      *zap.Logger
-	db       *storage.Database
-	redis    *storage.Redis
-	manager  *SessionManager
-	commands *Registry
-	metrics  *Metrics
+	cfg     config.OrchestratorConfig
+	log     *zap.Logger
+	usecase *usecase.SessionUsecase
+	handler *orchHttp.Handler
+	metrics *Metrics
 }
 
+// NewService creates and configures the orchestrator service and its dependencies.
 func NewService(cfg config.OrchestratorConfig, log *zap.Logger, db *storage.Database, redis *storage.Redis) (*Service, error) {
 	if log == nil {
 		return nil, errors.New("logger is nil")
 	}
 	if cfg.SecretKey == "" {
-		log.Warn("secret key empty, using derived default")
+		log.Warn("secret key is not set, using a default. This is insecure for production.")
 	}
-	manager := NewSessionManager(cfg, log, db)
-	registry := NewRegistry(log)
+
+	// 1. Initialize Repositories
+	sessionRepo := repository.NewSessionRepository(log.Named("session_repo"), db)
+
+	// 2. Initialize Usecases
+	sessionUsecase := usecase.NewSessionUsecase(cfg, log.Named("session_usecase"), sessionRepo, cfg.SecretKey)
+
+	// 3. Initialize Delivery Layer (HTTP Handler)
+	httpHandler := orchHttp.NewHandler(log.Named("http_handler"), sessionUsecase)
+
 	metrics := NewMetrics()
 
 	return &Service{
-		cfg:      cfg,
-		log:      log,
-		db:       db,
-		redis:    redis,
-		manager:  manager,
-		commands: registry,
-		metrics:  metrics,
+		cfg:     cfg,
+		log:     log,
+		usecase: sessionUsecase,
+		handler: httpHandler,
+		metrics: metrics,
 	}, nil
 }
 
+// Run starts the orchestrator service, including the API and metrics servers.
 func (s *Service) Run(ctx context.Context) error {
-	if err := s.manager.Bootstrap(ctx); err != nil {
-		s.log.Warn("bootstrap sessions", zap.Error(err))
+	if err := s.usecase.Bootstrap(ctx); err != nil {
+		s.log.Warn("failed to bootstrap sessions, some userbots may not start automatically", zap.Error(err))
 	}
 
 	router := chi.NewRouter()
@@ -58,11 +68,8 @@ func (s *Service) Run(ctx context.Context) error {
 	router.Use(middleware.Timeout(60 * time.Second))
 	router.Use(s.requestLogger)
 
-	router.Get("/healthz", s.handleHealth)
-	router.Post("/sessions", s.handleCreateSession)
-	router.Delete("/sessions/{telegramID}", s.handleDeleteSession)
-	router.Get("/stats/database", s.handleStats)
-	router.Patch("/features/{feature}/{telegramID}", s.handlePatchFeature)
+	// Register all API routes from the delivery handler
+	s.handler.RegisterRoutes(router)
 
 	apiServer := &http.Server{
 		Addr:              s.cfg.ListenAddr,
@@ -80,17 +87,19 @@ func (s *Service) Run(ctx context.Context) error {
 
 	g, ctx := errgroup.WithContext(ctx)
 
+	// Start API server
 	g.Go(func() error {
-		s.log.Info("orchestrator listening", zap.String("addr", s.cfg.ListenAddr))
+		s.log.Info("orchestrator API server starting", zap.String("addr", s.cfg.ListenAddr))
 		if err := apiServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			return err
 		}
 		return nil
 	})
 
+	// Start metrics server
 	if s.cfg.MetricsAddr != "" {
 		g.Go(func() error {
-			s.log.Info("metrics listening", zap.String("addr", s.cfg.MetricsAddr))
+			s.log.Info("metrics server starting", zap.String("addr", s.cfg.MetricsAddr))
 			if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 				return err
 			}
@@ -98,19 +107,22 @@ func (s *Service) Run(ctx context.Context) error {
 		})
 	}
 
+	// Handle graceful shutdown
 	g.Go(func() error {
 		<-ctx.Done()
+		s.log.Info("shutting down servers")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = apiServer.Shutdown(shutdownCtx)
 		_ = metricsServer.Shutdown(shutdownCtx)
-		s.manager.Stop()
+		s.usecase.StopAllWorkers()
 		return nil
 	})
 
 	return g.Wait()
 }
 
+// requestLogger is a logging middleware for HTTP requests.
 func (s *Service) requestLogger(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()

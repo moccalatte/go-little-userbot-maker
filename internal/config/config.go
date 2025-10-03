@@ -27,6 +27,7 @@ type WizardConfig struct {
 	StateTTL        time.Duration `env:"STATE_TTL" envDefault:"10m"`
 	AdminIDs        []int64       `env:"ADMIN_IDS" envSeparator:","`
 	UseMock         bool          `env:"USE_MOCK" envDefault:"false"`
+	Debug           bool          `env:"DEBUG" envDefault:"false"`
 }
 
 type OrchestratorConfig struct {

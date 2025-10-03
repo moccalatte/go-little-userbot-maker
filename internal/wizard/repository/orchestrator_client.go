@@ -1,4 +1,4 @@
-package wizard
+package repository
 
 import (
 	"bytes"
@@ -46,7 +46,7 @@ func (c *OrchestratorClient) DeleteSession(ctx context.Context, telegramID int64
 	return c.send(ctx, http.MethodDelete, path, nil)
 }
 
-func (c *OrchestratorClient) PatchFeature(ctx context.Context, feature string, telegramID int64, data any) error {
+func (c *OrchestratorClient) PatchFeature(ctx context.Context, feature string, telegramID int64, data map[string]any) error {
 	path := fmt.Sprintf("/features/%s/%d", feature, telegramID)
 	return c.send(ctx, http.MethodPatch, path, data)
 }

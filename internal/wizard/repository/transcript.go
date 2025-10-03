@@ -1,4 +1,4 @@
-package wizard
+package repository
 
 import (
 	"encoding/json"

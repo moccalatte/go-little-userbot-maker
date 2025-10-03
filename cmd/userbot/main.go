@@ -11,9 +11,9 @@ import (
 	"go.uber.org/zap"
 
 	"go-little-userbot-maker/internal/config"
-	"go-little-userbot-maker/internal/logging"
 	"go-little-userbot-maker/internal/orchestrator"
-	"go-little-userbot-maker/internal/storage"
+	"go-little-userbot-maker/pkg/logging"
+	"go-little-userbot-maker/pkg/storage"
 )
 
 func main() {

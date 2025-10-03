@@ -9,63 +9,74 @@ import (
 	"go.uber.org/zap"
 
 	"go-little-userbot-maker/internal/config"
+	"go-little-userbot-maker/internal/wizard/delivery/telegram"
+	"go-little-userbot-maker/internal/wizard/repository"
+	"go-little-userbot-maker/internal/wizard/usecase"
 )
 
+// Bot defines the interface for a Telegram bot, allowing for mock implementations.
 type Bot interface {
 	GetUpdatesChan(tgbotapi.UpdateConfig) tgbotapi.UpdatesChannel
 	Send(c tgbotapi.Chattable) (tgbotapi.Message, error)
 	Request(c tgbotapi.Chattable) (*tgbotapi.APIResponse, error)
 }
 
+// Service encapsulates the bot's runtime, holding the bot instance and the Telegram handler.
 type Service struct {
-	cfg          config.WizardConfig
-	log          *zap.Logger
-	bot          Bot
-	state        StateStore
-	orchestrator *OrchestratorClient
-	transcripts  *TranscriptWriter
+	log     *zap.Logger
+	bot     Bot
+	handler *telegram.Handler
 }
 
-func NewService(cfg config.WizardConfig, log *zap.Logger, state StateStore, orchestrator *OrchestratorClient) (*Service, error) {
+// NewService creates and wires all components for the wizard service.
+func NewService(cfg config.WizardConfig, log *zap.Logger) (*Service, error) {
 	if log == nil {
 		return nil, errors.New("logger is nil")
 	}
-	if state == nil {
-		return nil, errors.New("state store is nil")
-	}
-	if orchestrator == nil {
-		return nil, errors.New("orchestrator client is nil")
-	}
 
+	// 1. Initialize Bot API (either mock or real)
 	var bot Bot
 	if cfg.UseMock {
-		bot = NewMockBot(log)
+		bot = repository.NewMockBot(log)
 	} else {
 		if cfg.BotToken == "" {
-			return nil, errors.New("bot token missing")
+			return nil, errors.New("bot token is missing")
 		}
 		api, err := tgbotapi.NewBotAPI(cfg.BotToken)
 		if err != nil {
 			return nil, err
 		}
-		api.Debug = true
+		api.Debug = cfg.Debug
 		bot = api
 	}
 
-	transcripts := NewTranscriptWriter(cfg.StoragePath, log)
+	// 2. Initialize Repositories
+	stateRepo := repository.NewMemoryStateStore(cfg.StateTTL)
+	orchRepo := repository.NewOrchestratorClient(cfg.OrchestratorURL, log.Named("orchestrator_client"))
+
+	// 3. Initialize Usecase
+	wizardUsecase := usecase.NewWizardUsecase(
+		log.Named("wizard_usecase"),
+		stateRepo,
+		orchRepo,
+		bot,
+		cfg.AdminIDs,
+		cfg.OrchestratorURL,
+	)
+
+	// 4. Initialize Delivery Handler
+	tgHandler := telegram.NewHandler(wizardUsecase, log)
 
 	return &Service{
-		cfg:          cfg,
-		log:          log,
-		bot:          bot,
-		state:        state,
-		orchestrator: orchestrator,
-		transcripts:  transcripts,
+		log:     log,
+		bot:     bot,
+		handler: tgHandler,
 	}, nil
 }
 
+// Run starts the service's main loop to listen for and process updates.
 func (s *Service) Run(ctx context.Context) error {
-	s.log.Info("wizard service starting", zap.String("listen", s.cfg.ListenAddr))
+	s.log.Info("wizard service starting")
 	updateConfig := tgbotapi.NewUpdate(0)
 	updateConfig.Timeout = 30
 	updates := s.bot.GetUpdatesChan(updateConfig)
@@ -77,12 +88,12 @@ func (s *Service) Run(ctx context.Context) error {
 			return ctx.Err()
 		case update, ok := <-updates:
 			if !ok {
+				s.log.Warn("updates channel closed, attempting to reconnect")
 				time.Sleep(time.Second)
+				updates = s.bot.GetUpdatesChan(updateConfig)
 				continue
 			}
-			if err := s.handleUpdate(ctx, update); err != nil {
-				s.log.Error("handle update", zap.Error(err))
-			}
+			s.handler.HandleUpdate(ctx, update)
 		}
 	}
 }

@@ -1,71 +1,48 @@
 # Go Little Userbot Maker
 
-Ekosistem dua layanan Telegram berbasis Go 1.22 untuk mereplikasi pengalaman Little Userbot Maker: **Bot Wizard** sebagai antarmuka percakapan dan **Userbot Orchestrator** sebagai backend multi-session `gotd/td` dengan Postgres.
+Selamat datang di Go Little Userbot Maker! Proyek ini adalah sebuah ekosistem untuk membuat dan mengelola sesi userbot Telegram dengan mudah.
 
-## Arsitektur Singkat
-- **Bot Wizard (`cmd/botwizard`)** memakai `go-telegram-bot-api/v5`, menyajikan menu ReplyKeyboard, menyimpan state dengan TTL, serta menulis transcript JSONL di `storage/logs/wizard/<telegram_id>/`.
-- **Userbot Orchestrator (`cmd/userbot`)** mengeksekusi worker per sesi, mengenkripsi session string dengan AES-GCM, menyimpan metadata di PostgreSQL, dan mengekspos HTTP API (`/sessions`, `/features/...`, `/stats/database`, `/healthz`).
-- Observabilitas: log terstruktur `zap`, metrik Prometheus di port 9090, skrip migrasi SQL di `userbot/migrations`.
+## Tujuan Proyek
 
-## Persyaratan
-- Go 1.22+
-- Docker & Docker Compose (opsional untuk stack penuh)
-- Akses token bot Telegram + kredensial Postgres
+Tujuan utama proyek ini adalah menyediakan dua layanan utama:
 
-## Langkah Cepat
-1. **Siapkan konfigurasi**
-   ```bash
-   cp .env.wizard.example .env.wizard
-   cp .env.userbot.example .env.userbot
-   # edit nilai BOT_TOKEN, ORCH_SECRET_KEY, dsb.
-   ```
-   Contoh `.env` bawaan sudah mengaktifkan mode mock; set `WIZARD_USE_MOCK=false` dan `ORCH_ENABLE_MOCK=false` bila siap tersambung ke Telegram & Postgres nyata.
-2. **Mode belajar (tanpa Postgres/Telegram)**
-   ```bash
-   make dev-mock
-   ```
-   Perintah ini menjalankan orchestrator in-memory dan wizard mock, cocok untuk eksplorasi awal.
-3. **Jalankan tes & build lokal**
-   ```bash
-   go test ./...
-   make build
-   ```
-4. **Stack lokal lengkap (wizard + orchestrator + Postgres + Redis)**
-   ```bash
-   ./run_local.sh            # blocking mode
-   # atau
-   make compose-up-local     # mode daemon
-   ```
-5. **Migrasi database** (jalankan setelah stack siap)
-   ```bash
-   DB_URL=postgres://userbot:userbot@localhost:5432/little_userbot?sslmode=disable \
-   ./scripts/migrate.sh
-   ```
+1.  **Bot Wizard**: Sebuah bot Telegram yang memandu pengguna melalui proses login (via OTP atau QR code) untuk membuat sesi userbot baru.
+2.  **Userbot Orchestrator**: Layanan backend yang aman untuk menyimpan dan mengelola sesi-sesi userbot tersebut.
 
-## Struktur Penting
-```
-cmd/                Entrypoint wizard & orchestrator
-internal/config     Loader environment & struktur konfigurasi
-internal/wizard     State machine bot, transcript writer, klien orchestrator
-internal/orchestrator Session manager, registry command, HTTP API, worker
-userbot/migrations  Skema PostgreSQL (users, sessions, reply_guard, dsb.)
-docker-compose*.yml Stack lokal & produksi terpisah
-scripts/            Skrip bantu (`dev_mock.sh`, `migrate.sh`)
-```
+## Memulai (Getting Started)
 
-## Operasional
-- **Wizard** berjalan di port `WIZARD_LISTEN_ADDR` (default 8081) dan logging JSON ke stdout serta file transcript.
-- **Orchestrator** membuka port `ORCH_LISTEN_ADDR` (default 8080) & Prometheus di `ORCH_METRICS_ADDR`.
-- Gunakan `make run-wizard` / `make run-userbot` untuk mode pengembangan tanpa Docker.
-- Gunakan `make dev-mock` bila ingin memulai tanpa dependensi eksternal.
-- Volume log: `wizard_logs`, `userbot_logs`; backup `userbot_db_data` untuk Postgres.
+Cara termudah untuk mencoba proyek ini adalah dengan menjalankan "mode belajar" yang tidak memerlukan koneksi ke Telegram atau database.
 
-## Verifikasi
-- `go test ./...`
-- Endpoint health: `curl http://localhost:8080/healthz`
-- Log wizard: periksa `storage/logs/wizard/<telegram_id>/YYYY-MM-DD.jsonl`.
+### Persyaratan
 
-## Rollback Singkat
-- Hentikan layanan (`docker compose ... down`).
-- Restore backup database (volume `userbot_db_data`).
-- Deploy kembali image sebelumnya (tag versi lama) lalu jalankan migrasi `down` bila diperlukan dengan `scripts/migrate.sh`.
+-   Go (versi 1.22 atau lebih baru)
+-   Docker & Docker Compose
+
+### Langkah Cepat
+
+1.  **Siapkan Konfigurasi**: Salin file contoh `.env` untuk memulai. Anda tidak perlu mengubah isinya untuk mode belajar.
+    ```bash
+    cp .env.wizard.example .env.wizard
+    cp .env.userbot.example .env.userbot
+    ```
+
+2.  **Jalankan Mode Belajar**: Perintah ini akan menjalankan kedua layanan (wizard dan orchestrator) dengan data palsu (mock), sehingga Anda bisa langsung mencoba tanpa setup yang rumit.
+    ```bash
+    make dev-mock
+    ```
+
+3.  **Jalankan Tes (Opsional)**: Untuk memastikan semuanya berfungsi dengan baik, Anda bisa menjalankan tes otomatis.
+    ```bash
+    go test ./...
+    ```
+
+Setelah menjalankan `make dev-mock`, sistem akan aktif dan siap untuk dieksplorasi.
+
+## Dokumentasi Lanjutan
+
+Untuk pemahaman yang lebih mendalam, silakan merujuk ke dokumen berikut:
+
+-   **[Panduan Pengguna (panduan.md)](panduan.md)**: Instruksi lengkap untuk menjalankan dan menguji sistem ini dengan koneksi Telegram dan database sungguhan.
+-   **[Arsitektur Proyek (ARCHITECTURE.md)](ARCHITECTURE.md)**: Penjelasan teknis mengenai struktur proyek, lapisan-lapisan arsitektur (delivery, usecase, repository), dan bagaimana semua komponen saling berinteraksi.
+
+Dokumen-dokumen ini dirancang untuk membantu Anda memahami proyek ini dari berbagai tingkat keahlian, mulai dari pengguna non-teknis hingga pengembang perangkat lunak.

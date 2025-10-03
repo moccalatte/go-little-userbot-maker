@@ -176,7 +176,7 @@
 - **Project Layout**:
   - `internal/wizard/` (handlers, state, keyboards, logging middleware).
   - `internal/orchestrator/` (session manager, command registry, workers).
-  - `internal/storage/` (PostgreSQL repo menggunakan `pgx`), `internal/config/` (env loader), `internal/logging/` (zap setup).
+  - `pkg/storage/` (PostgreSQL repo menggunakan `pgx`), `internal/config/` (env loader), `pkg/logging/` (zap setup).
 - **State & Context**: gunakan `context.Context` pada setiap handler; simpan state wizard dalam Redis (pakai `go-redis`) atau map + mutex untuk prototipe.
 - **Error Handling**: bungkus operasi Telegram/DB; gunakan error wrapping (`fmt.Errorf("...: %w", err)`) agar mudah di-trace.
 - **Logging**: setiap handler log `event`, `user_id`, `chat_id`, `trace_id`, `request_id`. Wizard harus menulis transcript percakapan per user, sedangkan orchestrator menyimpan log per `telegram_id` dan mirror ke stdout untuk collector. Sediakan helper logger agar format konsisten lintas service.

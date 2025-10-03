@@ -11,8 +11,8 @@ import (
 	"go.uber.org/zap"
 
 	"go-little-userbot-maker/internal/config"
-	"go-little-userbot-maker/internal/logging"
 	"go-little-userbot-maker/internal/wizard"
+	"go-little-userbot-maker/pkg/logging"
 )
 
 func main() {
@@ -32,10 +32,7 @@ func main() {
 	}
 	defer logger.Sync() //nolint:errcheck
 
-	stateStore := wizard.NewMemoryStateStore(cfg.Wizard.StateTTL)
-	orchestratorClient := wizard.NewOrchestratorClient(cfg.Wizard.OrchestratorURL, logger.Named("orchestrator_client"))
-
-	service, err := wizard.NewService(cfg.Wizard, logger.Named("wizard"), stateStore, orchestratorClient)
+	service, err := wizard.NewService(cfg.Wizard, logger.Named("wizard"))
 	if err != nil {
 		logger.Fatal("init service", zap.Error(err))
 	}
