@@ -44,15 +44,7 @@ func main() {
 		logger.Warn("running orchestrator in mock mode (no database)")
 	}
 
-	redisClient := storage.NewRedis(cfg.Redis)
-	if redisClient != nil {
-		if err := redisClient.Ping(ctx); err != nil {
-			logger.Warn("redis ping failed", zap.Error(err))
-		}
-		defer redisClient.Close()
-	}
-
-	service, err := orchestrator.NewService(cfg.Orchestrator, logger.Named("orchestrator"), db, redisClient)
+	service, err := orchestrator.NewService(cfg.Orchestrator, logger.Named("orchestrator"), db)
 	if err != nil {
 		logger.Fatal("init orchestrator", zap.Error(err))
 	}

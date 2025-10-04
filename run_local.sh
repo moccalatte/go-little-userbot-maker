@@ -11,5 +11,5 @@ if [ ! -f ".env.userbot" ]; then
   exit 1
 fi
 
-echo "Menjalankan stack lokal (wizard + orchestrator + postgres + redis)..."
+echo "Menjalankan stack lokal (wizard + orchestrator + postgres)..."
 docker compose -f docker-compose.local.yml up --build

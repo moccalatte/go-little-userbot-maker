@@ -23,8 +23,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
     networks:
       - little_userbot
 
@@ -41,11 +39,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - little_userbot
-
-  redis:
-    image: redis:7-alpine
     networks:
       - little_userbot
 

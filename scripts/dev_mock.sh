@@ -18,13 +18,10 @@ export WIZARD_STATE_TTL=${WIZARD_STATE_TTL:-5m}
 export WIZARD_STORAGE_PATH=${WIZARD_STORAGE_PATH:-./storage/logs/wizard}
 
 export ORCH_LISTEN_ADDR=${ORCH_LISTEN_ADDR:-:8080}
-export ORCH_METRICS_ADDR=${ORCH_METRICS_ADDR:-:9090}
 export ORCH_SECRET_KEY=${ORCH_SECRET_KEY:-development-secret-key}
 export ORCH_HEALTH_INTERVAL=${ORCH_HEALTH_INTERVAL:-30s}
 export ORCH_ENABLE_MOCK=${ORCH_ENABLE_MOCK:-true}
 export ORCH_MAX_WORKERS=${ORCH_MAX_WORKERS:-16}
-
-export REDIS_ENABLED=${REDIS_ENABLED:-false}
 
 echo "[dev-mock] Menjalankan orchestrator (mock mode)..."
 go run ./cmd/userbot &

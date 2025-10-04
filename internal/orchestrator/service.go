@@ -24,11 +24,10 @@ type Service struct {
 	log     *zap.Logger
 	usecase *usecase.SessionUsecase
 	handler *orchHttp.Handler
-	metrics *Metrics
 }
 
 // NewService creates and configures the orchestrator service and its dependencies.
-func NewService(cfg config.OrchestratorConfig, log *zap.Logger, db *storage.Database, redis *storage.Redis) (*Service, error) {
+func NewService(cfg config.OrchestratorConfig, log *zap.Logger, db *storage.Database) (*Service, error) {
 	if log == nil {
 		return nil, errors.New("logger is nil")
 	}
@@ -45,14 +44,11 @@ func NewService(cfg config.OrchestratorConfig, log *zap.Logger, db *storage.Data
 	// 3. Initialize Delivery Layer (HTTP Handler)
 	httpHandler := orchHttp.NewHandler(log.Named("http_handler"), sessionUsecase)
 
-	metrics := NewMetrics()
-
 	return &Service{
 		cfg:     cfg,
 		log:     log,
 		usecase: sessionUsecase,
 		handler: httpHandler,
-		metrics: metrics,
 	}, nil
 }
 
@@ -77,14 +73,6 @@ func (s *Service) Run(ctx context.Context) error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	metricMux := http.NewServeMux()
-	metricMux.Handle("/metrics", s.metrics.Handler())
-	metricsServer := &http.Server{
-		Addr:              s.cfg.MetricsAddr,
-		Handler:           metricMux,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
-
 	g, ctx := errgroup.WithContext(ctx)
 
 	// Start API server
@@ -96,17 +84,6 @@ func (s *Service) Run(ctx context.Context) error {
 		return nil
 	})
 
-	// Start metrics server
-	if s.cfg.MetricsAddr != "" {
-		g.Go(func() error {
-			s.log.Info("metrics server starting", zap.String("addr", s.cfg.MetricsAddr))
-			if err := metricsServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-				return err
-			}
-			return nil
-		})
-	}
-
 	// Handle graceful shutdown
 	g.Go(func() error {
 		<-ctx.Done()
@@ -114,7 +91,6 @@ func (s *Service) Run(ctx context.Context) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 		_ = apiServer.Shutdown(shutdownCtx)
-		_ = metricsServer.Shutdown(shutdownCtx)
 		s.usecase.StopAllWorkers()
 		return nil
 	})

@@ -10,8 +10,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      redis:
-        condition: service_started
     volumes:
       - userbot_logs:/home/app/storage/logs
     networks:
@@ -31,12 +29,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    networks:
-      - userbot_net
-
-  redis:
-    image: redis:7-alpine
-    restart: always
     networks:
       - userbot_net
 

@@ -21,7 +21,7 @@
 ```
 - **Bot Wizard** bertindak sebagai conversational UI + admin panel sepenuhnya di Telegram (tidak ada antarmuka web) dan berjalan terisolasi di VPS A.
 - **Userbot Orchestrator** menjalankan banyak session userbot menggunakan `gotd/td`, berada di VPS B bersama PostgreSQL.
-- **Shared Services**: logging terstruktur (zap/logrus), metrics (Prometheus), tracing (OpenTelemetry opsional). Metrics/log forwarding bisa dikirim ke stack monitoring terpisah melalui exporter ringan.
+- **Shared Services**: logging terstruktur (zap/logrus), tracing (OpenTelemetry opsional). Log forwarding bisa dikirim ke stack monitoring terpisah melalui exporter ringan.
 
 ### 2.1 Deployment Model & Directory Layout
 - **Folder Top-Level** (`/home/app/go-little-userbot-maker` contoh):
@@ -37,7 +37,7 @@
 - **Networking**: VPS A dan B berkomunikasi lewat jaringan privat/zero-tier/WireGuard. Setiap compose expose port internal (contoh 8080) dan diamankan dengan firewall + mTLS/token.
 
 ### 2.2 Workflow Pengembangan
-- **Beginner Mock Mode**: jalankan `make dev-mock` (alias `scripts/dev_mock.sh`) untuk menyalakan orchestrator in-memory + wizard mock. Tidak perlu Postgres, Redis, atau bot token; seluruh log tetap tercatat di stdout dan `storage/logs`.
+- **Beginner Mock Mode**: jalankan `make dev-mock` (alias `scripts/dev_mock.sh`) untuk menyalakan orchestrator in-memory + wizard mock. Tidak perlu Postgres atau bot token; seluruh log tetap tercatat di stdout dan `storage/logs`.
 - **Local Testing Penuh**: jalankan `docker compose -f docker-compose.local.yml up --build` untuk menjalankan wizard, orchestrator, dan Postgres di mesin lokal (menggunakan bridge network yang sama). Wizard bicara ke orchestrator via hostname compose (`http://userbot:8080`).
 - **Staging/Production**:
   - Deploy ke VPS A: `docker compose -f docker-compose.wizard.yml up -d`. Hanya service wizard + optional log forwarder.
@@ -49,7 +49,7 @@
 - **Lapisan Logging**:
   - *Service stdout/stderr*: struktur JSON line log (`{"ts":"...","level":"info","service":"wizard","event":"..."}`) yang otomatis dikumpulkan oleh Docker logging driver dan diteruskan real-time ke agen (`promtail`/`filebeat`) → log sink (contoh: Loki/ELK). Tidak perlu tail manual di server untuk pemantauan rutin.
   - *Conversation transcripts*: setiap percakapan wizard disalin ke `storage/logs/wizard/<telegram_id>/<YYYY-MM-DD>.jsonl` (rotasi harian). Simpan payload request/response, tombol yang dipilih, serta context state.
-  - *Userbot activity*: aksi per-userbot (command, schedule, broadcast) dicatat ke `storage/logs/userbot/<telegram_id>.jsonl` + metrics. Sertakan field `origin` (user/manual/automation).
+  - *Userbot activity*: aksi per-userbot (command, schedule, broadcast) dicatat ke `storage/logs/userbot/<telegram_id>.jsonl`. Sertakan field `origin` (user/manual/automation).
   - *Admin/Owner actions*: tindakan seperti `DELETE /sessions`, perubahan konfigurasi, health check manual, disimpan di `storage/logs/admin/audit.jsonl` dan di-post ke channel Telegram admin.
 - **Retention**: minimal 30 hari di VPS (rolling); untuk produksi gunakan sink terpusat dengan retensi 90+ hari. Pastikan folder log masuk volume Docker (`wizard_logs`, `userbot_logs`).
 - **Self-Serve Access**: sediakan command admin `/logs <telegram_id>` yang men-trigger signed URL atau cuplikan 20 baris terakhir agar AI/operator bisa ambil log cepat tanpa SSH.
@@ -59,7 +59,7 @@
 -### 3.1 Conversational Flow
 - Library: `github.com/go-telegram-bot-api/telegram-bot-api/v5` atau `github.com/PaulSonOfLars/gotgbot` (pilih salah satu yang mendukung ReplyKeyboard).
 - Semua menu dari `/start` sampai admin menu harus memakai ReplyKeyboardMarkup/InlineKeyboardMarkup.
-- State machine disimpan dalam Redis atau in-memory map dengan TTL, keyed by chat_id. Mode mock default memakai penyimpanan in-memory.
+- State machine disimpan dalam in-memory map dengan TTL, keyed by chat_id. Mode mock default memakai penyimpanan in-memory.
 - Logging aktivitas:
   - Stdout/stderr dalam format JSON terstruktur (level, event, chat_id, trace_id) agar mudah dikirim ke log sink.
   - Simpan transcript interaksi ke `storage/logs/wizard/<telegram_id>/<YYYY-MM-DD>.jsonl` termasuk pesan user, respon wizard, keyboard yang ditampilkan, dan state aktif.
@@ -119,7 +119,6 @@
 - Broadcast scheduler memanfaatkan cron worker (misal `github.com/robfig/cron/v3`).
 
 ### 4.3 Monitoring & Telemetry
-- Metrics Prometheus: jumlah session aktif, pesan terkirim, error rate per command. Mode mock tetap mengekspor metrik dasar dan log heartbeat tiap interval.
 - Logs terstruktur (zap) dengan key `user_id`, `telegram_id`, `command`, `actor` (user/automation/admin), `latency_ms`, `request_id`. Setiap eksekusi command tulis outcome (success/fail) + alasan.
 - Scheduler, worker pool, dan event penting (login, logout, restart) log ke `storage/logs/userbot/<telegram_id>.jsonl` untuk korelasi dengan wizard.
 - Health endpoint `/healthz` memeriksa koneksi database, queue, dan goroutine leak (optional stack dump).
@@ -137,7 +136,6 @@
 - **Context Propagation**: semua request internal membawa `context.Context` dengan deadline & nilai `trace_id`; pastikan worker goroutine menghormati cancel.
 - **Error Taxonomy**: bedakan MTProto errors (FloodWait, AuthKeyUnregistered, SessionPasswordNeeded) dan network I/O. Implementasikan retry/backoff sesuai `gotd/td` best practice (`telegram.Options{RetryInterval, MaxRetries}`).
 - **Session Lifecycle Hooks**: manfaatkan `gotd/td/telegram` `Reconnect` dan `Updates` handler untuk memastikan DC migration, bad salt, dan auth key refresh otomatis; log peristiwa tersebut di level WARN.
-- **Metrics**: ekspor Prometheus metrics (command latency, goroutine count, reconnect attempts, queue depth) dengan label plan/tier.
 - **Panic & Leak Detection**: bungkus goroutine dengan `defer` recovery, jalankan `go test -race`, dan tampilkan health endpoint yang memeriksa jumlah goroutine abnormal.
 - **Audit Trail**: simpan catatan JSON per perubahan konfigurasi (Reply Guard, Broadcast) dengan checksum agar memudahkan rollback.
 - **Continuous Verification**: buat synthetic check (misal job kecil yang memicu command dummy) jalankan via Cron dan laporkan hasil ke admin bot. Mode mock dapat dipakai sebagai pre-check sebelum produksi.
@@ -159,7 +157,6 @@
 - [ ] Unit test untuk flow OTP, QR, token login, admin commands, reply guard sync.
 - [ ] Integration test memverifikasi orchestrator menerima session baru dan menjalankan command minimal.
 - [ ] CI pipeline: lint (golangci-lint), test, static analysis, docker build.
-- [ ] Observability stack aktif (Prometheus, Loki/ELK optional).
 
 ## 8. Risks & Mitigations
 - **Telegram rate limits**: implementasi backoff dan queue.
@@ -172,12 +169,12 @@
 - **Dependensi**:
   - Bot wizard: `go-telegram-bot-api` v5 atau `gotgbot` terbaru.
   - Userbot: `github.com/gotd/td` (+ `telegram` client, `mtproto` helpers), `github.com/gotd/neo` untuk helper.
-  - Observability: `go.uber.org/zap`, `github.com/prometheus/client_golang`, optional `github.com/getsentry/sentry-go`.
+  - Observability: `go.uber.org/zap`, optional `github.com/getsentry/sentry-go`.
 - **Project Layout**:
   - `internal/wizard/` (handlers, state, keyboards, logging middleware).
   - `internal/orchestrator/` (session manager, command registry, workers).
   - `pkg/storage/` (PostgreSQL repo menggunakan `pgx`), `internal/config/` (env loader), `pkg/logging/` (zap setup).
-- **State & Context**: gunakan `context.Context` pada setiap handler; simpan state wizard dalam Redis (pakai `go-redis`) atau map + mutex untuk prototipe.
+- **State & Context**: gunakan `context.Context` pada setiap handler; simpan state wizard dalam map + mutex untuk prototipe.
 - **Error Handling**: bungkus operasi Telegram/DB; gunakan error wrapping (`fmt.Errorf("...: %w", err)`) agar mudah di-trace.
 - **Logging**: setiap handler log `event`, `user_id`, `chat_id`, `trace_id`, `request_id`. Wizard harus menulis transcript percakapan per user, sedangkan orchestrator menyimpan log per `telegram_id` dan mirror ke stdout untuk collector. Sediakan helper logger agar format konsisten lintas service.
 - **MTProto Practices**: gunakan `telegram.Options{DCList, Signal, RetryIf}` untuk reliabilitas; perhatikan perbedaan fatal error vs retryable (bad salt, flood wait, deactivated user).
@@ -191,7 +188,6 @@
 2. **Unit Test**: `go test ./... -race`; target coverage minimum 60% untuk paket utilitas/storage.
 3. **Integration Test**: gunakan environment staging yang memanggil API internal `POST /sessions` dengan session dummy dan memastikan worker aktif.
 4. **Load/Chaos Test**: gunakan `k6` atau tool lain untuk mensimulasikan 100+ session connect/disconnect, memverifikasi orchestrator stabil.
-5. **Observability Review**: pastikan semua metrics/logs muncul di Prometheus/Grafana sebelum rilis.
 6. **Release Checklist**: update changelog, jalankan migrations via `golang-migrate up`, deploy wizard dan orchestrator secara terpisah.
 
 ---
