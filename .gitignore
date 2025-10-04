@@ -9,6 +9,8 @@ dist/
 # Environment files
 .env
 .env.*
+!.env.wizard.example
+!.env.userbot.example
 
 # Logs and runtime data
 storage/logs/*
