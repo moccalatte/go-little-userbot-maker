@@ -13,6 +13,7 @@ import (
 	"go-little-userbot-maker/internal/config"
 	"go-little-userbot-maker/internal/wizard"
 	"go-little-userbot-maker/pkg/logging"
+	"go-little-userbot-maker/pkg/storage"
 )
 
 func main() {
@@ -32,7 +33,18 @@ func main() {
 	}
 	defer logger.Sync() //nolint:errcheck
 
-	service, err := wizard.NewService(cfg.Wizard, logger.Named("wizard"))
+	var db *storage.Database
+	if !cfg.Wizard.UseMock {
+		db, err = storage.NewDatabase(ctx, cfg.Database)
+		if err != nil {
+			logger.Fatal("connect database", zap.Error(err))
+		}
+		defer db.Close()
+	} else {
+		logger.Warn("running wizard in mock mode (no database)")
+	}
+
+	service, err := wizard.NewService(cfg.Wizard, logger.Named("wizard"), db)
 	if err != nil {
 		logger.Fatal("init service", zap.Error(err))
 	}

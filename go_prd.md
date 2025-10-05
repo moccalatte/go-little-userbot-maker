@@ -124,12 +124,17 @@
 - Health endpoint `/healthz` memeriksa koneksi database, queue, dan goroutine leak (optional stack dump).
 
 ## 5. Data Model (PostgreSQL)
-- **users**: id (bigint), username, plan, status, timestamps.
-- **sessions**: id, user_id, telegram_id, session_encrypted, secret_version, login_method, metadata JSONB (device, DC, ip), worker_host, status, created_at, last_seen.
+- **users**: id (bigint), telegram_id (unique), username, full_name, plan, status, timestamps.
+- **sessions**: id, user_id, owner_user_id, telegram_id, session_type, bot_username, bot_display_name, session_encrypted, secret_version, login_method, metadata JSONB (device, DC, ip), features JSONB, config JSONB, worker_host, status, session_hash, request_id, origin, created_at, updated_at, last_seen.
+- **bot_commands**: id, session_id, command, description, response_type, payload JSONB, enabled, timestamps.
+- **bot_command_triggers**: id, command_id, trigger_type (command/text/regex/button), trigger_value, metadata JSONB, timestamps.
+- **wizard_runs**: id, user_id, session_id, status (draft/in_progress/completed/failed/aborted), current_step, payload JSONB, timestamps, completed_at.
+- **wizard_steps**: id, wizard_run_id, step_name, sequence, state JSONB, timestamps.
+- **audits**: id, actor_id, target_type, target_id, action, diff JSONB, metadata JSONB, created_at.
 - **reply_guard_rules**: id, user_id, include_keywords, exclude_keywords, regex, targets, reply_text, status.
 - **broadcast_jobs**: id, user_id, message, interval_minutes, targets_json, next_run, enabled.
-- **usage_stats**: id, user_id, command, count, last_used.
-- Gunakan migrations dengan `golang-migrate`.
+- **usage_stats**: id, user_id, session_id, command, count, last_used.
+- Gunakan migrations dengan `golang-migrate` dan idempotent seed default command (melalui wizard persistence) setelah sesi dibuat.
 
 ### 5.1 Observability & Reliability Practices (Go-centric)
 - **Structured Logging**: gunakan `zap`/`zerolog` dengan field wajib (`user_id`, `chat_id`, `command`, `flow_state`, `trace_id`). Bungkus handler Telegram dan orchestrator dengan middleware logging.

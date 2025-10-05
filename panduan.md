@@ -52,8 +52,8 @@ make compose-down-local
 1. Pilih **🤖 Buat Userbot** → **📱 OTP**.
 2. Masukkan nomor telepon lengkap (format `+62...`).
 3. Isi `API ID` & `API hash` dari https://my.telegram.org.
-4. Ketik kode OTP dan password 2FA (jika ada, atau masukkan `-`).
-5. Wizard mengirim session ke Orchestrator; Anda menerima konfirmasi keberhasilan.
+4. Ketik kode OTP dan password 2FA (jika ada, atau masukkan `-`). Progres tersimpan otomatis di database (`wizard_runs`), jadi aman bila harus mengulang.
+5. Wizard mengirim session lengkap ke Orchestrator, mencatat audit, dan menyiapkan perintah dasar (`/ping`, `/help`) untuk userbot baru. Anda menerima konfirmasi keberhasilan.
 
 ## 4. Pemeriksaan & Pengujian
 - **Tes otomatis**: jalankan `go test ./...` (untuk tim teknis).

@@ -39,8 +39,9 @@ Both the `wizard` and `orchestrator` modules follow a three-layer architecture:
 3.  **Repository Layer (`repository/`)**
     -   **Responsibility**: Manages all data persistence and communication with external services. It implements the interfaces defined by the `usecase` layer.
     -   **Examples**:
-        -   `wizard/repository/state.go` provides an in-memory store for the bot's conversational state.
-        -   `orchestrator/repository/session_repo.go` handles all SQL queries for reading and writing session data to the PostgreSQL database.
+        -   `wizard/repository/state.go` provides an in-memory store for short-lived conversational state.
+        -   `wizard/repository/wizard_persistence.go` persists wizard runs, step snapshots, and the default command presets to PostgreSQL.
+        -   `orchestrator/repository/session_repo.go` handles all SQL queries for reading and writing session data to the PostgreSQL database and writes audit trails.
     -   **Rule**: This layer depends on the `usecase` layer (by implementing its interfaces) but knows nothing about the `delivery` layer.
 
 ## How It Fits Together: An Example Flow (Creating a Userbot)
@@ -48,13 +49,13 @@ Both the `wizard` and `orchestrator` modules follow a three-layer architecture:
 1.  A user sends a message to the Telegram bot.
 2.  The `wizard` service's main loop receives the update.
 3.  The `wizard/delivery/telegram/handler.go` receives the update and calls the `HandleUpdate` method on the `wizard/usecase/wizard_usecase.go`.
-4.  The `wizard_usecase` processes the logic (e.g., asks the next question) and uses its `StateRepository` interface to save the user's progress.
-5.  The `wizard/repository/state.go` (which implements the `StateRepository` interface) saves the data in memory.
-6.  When the flow is complete, the `wizard_usecase` calls the `OrchestratorRepository` interface to create the session.
-7.  The `wizard/repository/orchestrator_client.go` (which implements the interface) makes an HTTP call to the `orchestrator` service's `/sessions` endpoint.
-8.  The request is received by `orchestrator/delivery/http/handler.go`.
-9.  The handler calls the `CreateSession` method on the `orchestrator/usecase/session_usecase.go`.
-10. The `session_usecase` encrypts the session data and calls the `SessionRepository` interface to save it.
-11. The `orchestrator/repository/session_repo.go` executes the SQL query to insert the new session into the database.
+4.  The `wizard_usecase` processes the logic (e.g., asks the next question), writes the conversational snapshot to the in-memory `StateRepository`, and mirrors long-running progress to the SQL-backed `WizardPersistence` repository.
+5.  When the flow is complete, the `wizard_usecase` calls the `OrchestratorRepository` interface to create or update the session and receives the persisted session identifier in response.
+6.  The `wizard/repository/orchestrator_client.go` (which implements the interface) makes an HTTP call to the `orchestrator` service's `/sessions` endpoint.
+7.  The request is received by `orchestrator/delivery/http/handler.go`.
+8.  The handler calls the `CreateSession` method on the `orchestrator/usecase/session_usecase.go`.
+9.  The `session_usecase` encrypts the session data, persists it through the `SessionRepository`, and starts/refreshes the worker.
+10. The `orchestrator/repository/session_repo.go` upserts the session, writes an audit log entry, and returns the canonical session identifier.
+11. The wizard records the completion status (or failure) in `wizard_runs`, seeds default bot commands via `bot_commands`, and confirms success to the user.
 
 This layered approach makes the system modular and easier to understand, as each component has a single, well-defined responsibility.

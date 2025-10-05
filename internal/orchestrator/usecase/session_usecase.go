@@ -14,42 +14,67 @@ import (
 
 // SessionRecord is a core domain entity representing a user's session.
 type SessionRecord struct {
-	TelegramID  int64
-	SessionData []byte
-	LoginMethod string
-	Metadata    map[string]string
-	SessionHash string
-	RequestID   string
-	Origin      string
-	UpdatedAt   time.Time
+	ID              int64
+	UserID          *int64
+	OwnerUserID     *int64
+	OwnerTelegramID int64
+	OwnerUsername   string
+	OwnerFullName   string
+	TelegramID      int64
+	SessionType     string
+	SessionData     []byte
+	LoginMethod     string
+	Metadata        map[string]string
+	Features        map[string]any
+	Config          map[string]any
+	SessionHash     string
+	RequestID       string
+	Origin          string
+	BotUsername     string
+	BotDisplayName  string
+	UpdatedAt       time.Time
 }
 
 // SessionRepository defines the interface for session data persistence.
 type SessionRepository interface {
 	Bootstrap(ctx context.Context) ([]SessionRecord, error)
-	CreateOrUpdate(ctx context.Context, record SessionRecord) error
+	CreateOrUpdate(ctx context.Context, record SessionRecord) (CreateSessionResult, error)
 	MarkAsDeleted(ctx context.Context, telegramID int64) error
 	Ping(ctx context.Context) error
 }
 
 // CreateSessionInput is the DTO for creating a new session.
 type CreateSessionInput struct {
-	TelegramID  int64
-	Session     string
-	LoginMethod string
-	Metadata    map[string]string
-	SessionHash string
-	RequestID   string
-	Origin      string
+	TelegramID      int64
+	Session         string
+	LoginMethod     string
+	Metadata        map[string]string
+	SessionHash     string
+	RequestID       string
+	Origin          string
+	OwnerTelegramID int64
+	OwnerUsername   string
+	OwnerFullName   string
+	SessionType     string
+	BotUsername     string
+	BotDisplayName  string
+	Features        map[string]any
+	Config          map[string]any
+}
+
+// CreateSessionResult describes the outcome of a session creation/upsert.
+type CreateSessionResult struct {
+	SessionID   int64
+	OwnerUserID int64
 }
 
 // SessionUsecase orchestrates the logic for managing userbot sessions and workers.
 type SessionUsecase struct {
-	cfg      config.OrchestratorConfig
-	log      *zap.Logger
-	repo     SessionRepository
-	secret   []byte
-	workers  sync.Map // map[int64]*Worker
+	cfg     config.OrchestratorConfig
+	log     *zap.Logger
+	repo    SessionRepository
+	secret  []byte
+	workers sync.Map // map[int64]*Worker
 }
 
 // NewSessionUsecase creates a new session usecase.
@@ -70,7 +95,10 @@ func (uc *SessionUsecase) Bootstrap(ctx context.Context) error {
 	}
 
 	for _, rec := range records {
-		uc.log.Info("bootstrapping worker", zap.Int64("telegram_id", rec.TelegramID))
+		uc.log.Info("bootstrapping worker",
+			zap.Int64("telegram_id", rec.TelegramID),
+			zap.String("session_type", rec.SessionType),
+			zap.String("bot_username", rec.BotUsername))
 		worker := NewWorker(rec.TelegramID, rec, uc.log, uc.cfg.HealthInterval)
 		worker.Start()
 		uc.workers.Store(rec.TelegramID, worker)
@@ -79,28 +107,50 @@ func (uc *SessionUsecase) Bootstrap(ctx context.Context) error {
 }
 
 // CreateSession encrypts, persists, and starts a new userbot session.
-func (uc *SessionUsecase) CreateSession(ctx context.Context, req CreateSessionInput) error {
+func (uc *SessionUsecase) CreateSession(ctx context.Context, req CreateSessionInput) (CreateSessionResult, error) {
 	if req.TelegramID == 0 {
-		return errors.New("telegram_id is required")
+		return CreateSessionResult{}, errors.New("telegram_id is required")
 	}
 	encrypted, err := EncryptSession(req.Session, uc.secret)
 	if err != nil {
-		return fmt.Errorf("failed to encrypt session: %w", err)
+		return CreateSessionResult{}, fmt.Errorf("failed to encrypt session: %w", err)
+	}
+
+	if req.Metadata == nil {
+		req.Metadata = map[string]string{}
+	}
+	if req.Features == nil {
+		req.Features = map[string]any{}
+	}
+	if req.Config == nil {
+		req.Config = map[string]any{}
+	}
+	if req.SessionType == "" {
+		req.SessionType = "userbot"
 	}
 
 	record := SessionRecord{
-		TelegramID:  req.TelegramID,
-		SessionData: encrypted,
-		LoginMethod: req.LoginMethod,
-		Metadata:    req.Metadata,
-		SessionHash: req.SessionHash,
-		RequestID:   req.RequestID,
-		Origin:      req.Origin,
-		UpdatedAt:   time.Now().UTC(),
+		TelegramID:      req.TelegramID,
+		SessionData:     encrypted,
+		LoginMethod:     req.LoginMethod,
+		Metadata:        req.Metadata,
+		Features:        req.Features,
+		Config:          req.Config,
+		SessionHash:     req.SessionHash,
+		RequestID:       req.RequestID,
+		Origin:          req.Origin,
+		OwnerTelegramID: req.OwnerTelegramID,
+		OwnerUsername:   req.OwnerUsername,
+		OwnerFullName:   req.OwnerFullName,
+		SessionType:     req.SessionType,
+		BotUsername:     req.BotUsername,
+		BotDisplayName:  req.BotDisplayName,
+		UpdatedAt:       time.Now().UTC(),
 	}
 
-	if err := uc.repo.CreateOrUpdate(ctx, record); err != nil {
-		return fmt.Errorf("failed to save session: %w", err)
+	result, err := uc.repo.CreateOrUpdate(ctx, record)
+	if err != nil {
+		return CreateSessionResult{}, fmt.Errorf("failed to save session: %w", err)
 	}
 
 	// Stop existing worker if any
@@ -113,9 +163,12 @@ func (uc *SessionUsecase) CreateSession(ctx context.Context, req CreateSessionIn
 	worker := NewWorker(record.TelegramID, record, uc.log, uc.cfg.HealthInterval)
 	worker.Start()
 	uc.workers.Store(record.TelegramID, worker)
-	uc.log.Info("started new worker", zap.Int64("telegram_id", record.TelegramID))
+	uc.log.Info("started new worker",
+		zap.Int64("telegram_id", record.TelegramID),
+		zap.String("session_type", record.SessionType),
+		zap.String("bot_username", record.BotUsername))
 
-	return nil
+	return result, nil
 }
 
 // DeleteSession stops a worker and marks the session as deleted.

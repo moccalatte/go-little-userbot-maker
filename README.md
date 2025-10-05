@@ -6,8 +6,8 @@ Selamat datang di Go Little Userbot Maker! Proyek ini adalah sebuah ekosistem un
 
 Tujuan utama proyek ini adalah menyediakan dua layanan utama:
 
-1.  **Bot Wizard**: Sebuah bot Telegram yang memandu pengguna melalui proses login (via OTP atau QR code) untuk membuat sesi userbot baru.
-2.  **Userbot Orchestrator**: Layanan backend yang aman untuk menyimpan dan mengelola sesi-sesi userbot tersebut.
+1.  **Bot Wizard**: Sebuah bot Telegram yang memandu pengguna melalui proses login (OTP, QR, atau token), menyimpan progres wizard ke database (`wizard_runs`, `wizard_steps`), dan otomatis menyiapkan perintah dasar userbot.
+2.  **Userbot Orchestrator**: Layanan backend yang mengenkripsi dan mengelola sesi userbot (multi-session via `session_type`), mencatat audit trail, serta menyediakan API bagi wizard.
 
 ## Memulai (Getting Started)
 
@@ -44,5 +44,6 @@ Untuk pemahaman yang lebih mendalam, silakan merujuk ke dokumen berikut:
 
 -   **[Panduan Pengguna (panduan.md)](panduan.md)**: Instruksi lengkap untuk menjalankan dan menguji sistem ini dengan koneksi Telegram dan database sungguhan.
 -   **[Arsitektur Proyek (ARCHITECTURE.md)](ARCHITECTURE.md)**: Penjelasan teknis mengenai struktur proyek, lapisan-lapisan arsitektur (delivery, usecase, repository), dan bagaimana semua komponen saling berinteraksi.
+-   **[PRD & Data Model (go_prd.md)](go_prd.md)**: Detail kebutuhan produk, skema tabel terbaru (`bot_commands`, `wizard_runs`, `audits`, dll.), serta alur operasional antar layanan.
 
 Dokumen-dokumen ini dirancang untuk membantu Anda memahami proyek ini dari berbagai tingkat keahlian, mulai dari pengguna non-teknis hingga pengembang perangkat lunak.

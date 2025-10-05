@@ -12,6 +12,7 @@ import (
 	"go-little-userbot-maker/internal/wizard/delivery/telegram"
 	"go-little-userbot-maker/internal/wizard/repository"
 	"go-little-userbot-maker/internal/wizard/usecase"
+	"go-little-userbot-maker/pkg/storage"
 )
 
 // Bot defines the interface for a Telegram bot, allowing for mock implementations.
@@ -29,7 +30,7 @@ type Service struct {
 }
 
 // NewService creates and wires all components for the wizard service.
-func NewService(cfg config.WizardConfig, log *zap.Logger) (*Service, error) {
+func NewService(cfg config.WizardConfig, log *zap.Logger, db *storage.Database) (*Service, error) {
 	if log == nil {
 		return nil, errors.New("logger is nil")
 	}
@@ -53,6 +54,7 @@ func NewService(cfg config.WizardConfig, log *zap.Logger) (*Service, error) {
 	// 2. Initialize Repositories
 	stateRepo := repository.NewMemoryStateStore(cfg.StateTTL)
 	orchRepo := repository.NewOrchestratorClient(cfg.OrchestratorURL, log.Named("orchestrator_client"))
+	persistRepo := repository.NewWizardPersistence(log.Named("wizard_persistence"), db)
 
 	// 3. Initialize Usecase
 	wizardUsecase := usecase.NewWizardUsecase(
@@ -62,6 +64,7 @@ func NewService(cfg config.WizardConfig, log *zap.Logger) (*Service, error) {
 		bot,
 		cfg.AdminIDs,
 		cfg.OrchestratorURL,
+		persistRepo,
 	)
 
 	// 4. Initialize Delivery Handler

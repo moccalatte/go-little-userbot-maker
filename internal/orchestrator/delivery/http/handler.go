@@ -15,7 +15,7 @@ import (
 // SessionUsecase defines the interface for session-related business logic.
 // This allows the handler to be decoupled from the specific implementation.
 type SessionUsecase interface {
-	CreateSession(ctx context.Context, req usecase.CreateSessionInput) error
+	CreateSession(ctx context.Context, req usecase.CreateSessionInput) (usecase.CreateSessionResult, error)
 	DeleteSession(ctx context.Context, telegramID int64) error
 	UpdateFeature(ctx context.Context, feature string, telegramID int64, payload map[string]any) error
 	GetStats() map[string]any
@@ -47,13 +47,21 @@ func (h *Handler) RegisterRoutes(r *chi.Mux) {
 
 // SessionRequest is the DTO for creating a new session.
 type SessionRequest struct {
-	TelegramID  int64             `json:"telegram_id"`
-	Session     string            `json:"session_string"`
-	LoginMethod string            `json:"login_method"`
-	Metadata    map[string]string `json:"metadata"`
-	SessionHash string            `json:"session_hash"`
-	RequestID   string            `json:"request_id"`
-	Origin      string            `json:"origin"`
+	TelegramID      int64             `json:"telegram_id"`
+	Session         string            `json:"session_string"`
+	LoginMethod     string            `json:"login_method"`
+	Metadata        map[string]string `json:"metadata"`
+	SessionHash     string            `json:"session_hash"`
+	RequestID       string            `json:"request_id"`
+	Origin          string            `json:"origin"`
+	OwnerTelegramID int64             `json:"owner_telegram_id"`
+	OwnerUsername   string            `json:"owner_username"`
+	OwnerFullName   string            `json:"owner_full_name"`
+	SessionType     string            `json:"session_type"`
+	BotUsername     string            `json:"bot_username"`
+	BotDisplayName  string            `json:"bot_display_name"`
+	Features        map[string]any    `json:"features"`
+	Config          map[string]any    `json:"config"`
 }
 
 type featurePatchRequest struct {
@@ -74,23 +82,49 @@ func (h *Handler) handleCreateSession(w http.ResponseWriter, r *http.Request) {
 		req.LoginMethod = "unknown"
 	}
 
-	input := usecase.CreateSessionInput{
-		TelegramID:  req.TelegramID,
-		Session:     req.Session,
-		LoginMethod: req.LoginMethod,
-		Metadata:    req.Metadata,
-		SessionHash: req.SessionHash,
-		RequestID:   req.RequestID,
-		Origin:      req.Origin,
+	if req.Metadata == nil {
+		req.Metadata = map[string]string{}
+	}
+	if req.Features == nil {
+		req.Features = map[string]any{}
+	}
+	if req.Config == nil {
+		req.Config = map[string]any{}
+	}
+	if req.OwnerTelegramID == 0 {
+		req.OwnerTelegramID = req.TelegramID
 	}
 
-	if err := h.usecase.CreateSession(r.Context(), input); err != nil {
+	input := usecase.CreateSessionInput{
+		TelegramID:      req.TelegramID,
+		Session:         req.Session,
+		LoginMethod:     req.LoginMethod,
+		Metadata:        req.Metadata,
+		SessionHash:     req.SessionHash,
+		RequestID:       req.RequestID,
+		Origin:          req.Origin,
+		OwnerTelegramID: req.OwnerTelegramID,
+		OwnerUsername:   req.OwnerUsername,
+		OwnerFullName:   req.OwnerFullName,
+		SessionType:     req.SessionType,
+		BotUsername:     req.BotUsername,
+		BotDisplayName:  req.BotDisplayName,
+		Features:        req.Features,
+		Config:          req.Config,
+	}
+
+	result, err := h.usecase.CreateSession(r.Context(), input)
+	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	_ = json.NewEncoder(w).Encode(map[string]string{"status": "created"})
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"status":        "created",
+		"session_id":    result.SessionID,
+		"owner_user_id": result.OwnerUserID,
+	})
 }
 
 func (h *Handler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
