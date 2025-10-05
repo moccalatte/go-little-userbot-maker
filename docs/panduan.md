@@ -63,6 +63,23 @@ make compose-down-local
   - **Contoh Log Wizard**: `logs/bot-wizard/main/2025-10-05.log`
   - **Contoh Log Orchestrator**: `logs/userbot-orchestrator/main/2025-10-05.log`
 
+### Reset Database untuk Kebutuhan Testing
+Gunakan langkah ini hanya di lingkungan uji lokal karena seluruh data akan dihapus.
+
+1. Matikan stack lokal: `make compose-down-local` (atau `docker compose -f docker-compose.local.yml down`).
+2. Bersihkan volume Postgres agar tabel kembali kosong:
+   ```bash
+   docker compose -f docker-compose.local.yml down -v
+   ```
+3. Nyalakan kembali layanan: `make compose-up-local`, lalu jalankan migrasi bila perlu dengan `./scripts/migrate.sh`.
+
+**Alternatif (tanpa mematikan container)** — hapus isi tabel melalui shell psql:
+```bash
+docker compose -f docker-compose.local.yml exec db psql -U userbot -d little_userbot \
+  -c "TRUNCATE TABLE bot_command_triggers, bot_commands, wizard_steps, wizard_runs, usage_stats, broadcast_jobs, reply_guard_rules, sessions, users CASCADE;"
+```
+Pastikan perintah ini tidak dijalankan di lingkungan produksi.
+
 ## 5. Troubleshooting Singkat
 | Gejala | Langkah cepat |
 | --- | --- |
