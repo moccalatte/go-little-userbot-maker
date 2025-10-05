@@ -7,7 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"go-little-userbot-maker/internal/config"
+	"go-little-userbot-maker/pkg/config"
 )
 
 type Database struct {

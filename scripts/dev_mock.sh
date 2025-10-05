@@ -8,8 +8,6 @@ mkdir -p storage/logs/wizard storage/logs/userbot
 
 export APP_NAME=${APP_NAME:-go-little-userbot-maker}
 export APP_ENV=${APP_ENV:-development}
-export LOG_LEVEL=${LOG_LEVEL:-debug}
-export LOG_JSON=${LOG_JSON:-true}
 
 export WIZARD_USE_MOCK=${WIZARD_USE_MOCK:-true}
 export WIZARD_BOT_TOKEN=${WIZARD_BOT_TOKEN:-dummy-token}
@@ -24,7 +22,7 @@ export ORCH_ENABLE_MOCK=${ORCH_ENABLE_MOCK:-true}
 export ORCH_MAX_WORKERS=${ORCH_MAX_WORKERS:-16}
 
 echo "[dev-mock] Menjalankan orchestrator (mock mode)..."
-go run ./cmd/userbot &
+go run ./services/userbot-orchestrator/cmd &
 orch_pid=$!
 wizard_pid=0
 
@@ -43,7 +41,7 @@ trap cleanup EXIT INT TERM
 sleep 2
 
 echo "[dev-mock] Menjalankan bot wizard (mock bot)..."
-go run ./cmd/botwizard &
+go run ./services/bot-wizard/cmd &
 wizard_pid=$!
 
 wait "$orch_pid" "$wizard_pid"

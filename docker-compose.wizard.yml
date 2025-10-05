@@ -3,7 +3,7 @@ services:
     image: little-userbot-wizard:latest
     build:
       context: .
-      dockerfile: bot-wizard/Dockerfile
+      dockerfile: services/bot-wizard/Dockerfile
     restart: always
     env_file:
       - .env.wizard

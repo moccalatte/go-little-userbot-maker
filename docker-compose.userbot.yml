@@ -3,7 +3,7 @@ services:
     image: little-userbot-orchestrator:latest
     build:
       context: .
-      dockerfile: userbot/Dockerfile
+      dockerfile: services/userbot-orchestrator/Dockerfile
     restart: always
     env_file:
       - .env.userbot
