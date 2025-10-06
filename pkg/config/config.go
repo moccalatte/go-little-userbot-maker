@@ -25,6 +25,8 @@ type WizardConfig struct {
 	AdminIDs        []int64       `env:"ADMIN_IDS" envSeparator:","`
 	UseMock         bool          `env:"USE_MOCK" envDefault:"false"`
 	Debug           bool          `env:"DEBUG" envDefault:"false"`
+	APIID           string        `env:"API_ID"`
+	APIHash         string        `env:"API_HASH"`
 }
 
 type OrchestratorConfig struct {

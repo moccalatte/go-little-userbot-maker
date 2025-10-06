@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"strings"
 	"time"
 
@@ -41,9 +40,11 @@ type WizardUsecase struct {
 	bot             BotSender
 	adminIDs        []int64
 	orchestratorURL string
+	apiID           string
+	apiHash         string
 }
 
-func NewWizardUsecase(log *logger.Logger, stateRepo StateRepository, orchRepo OrchestratorRepository, bot BotSender, adminIDs []int64, orchestratorURL string) *WizardUsecase {
+func NewWizardUsecase(log *logger.Logger, stateRepo StateRepository, orchRepo OrchestratorRepository, bot BotSender, adminIDs []int64, orchestratorURL string, apiID string, apiHash string) *WizardUsecase {
 	return &WizardUsecase{
 		log:             log,
 		stateRepo:       stateRepo,
@@ -51,6 +52,8 @@ func NewWizardUsecase(log *logger.Logger, stateRepo StateRepository, orchRepo Or
 		bot:             bot,
 		adminIDs:        adminIDs,
 		orchestratorURL: orchestratorURL,
+		apiID:           apiID,
+		apiHash:         apiHash,
 	}
 }
 
@@ -135,7 +138,7 @@ func (uc *WizardUsecase) handleCreateMenu(ctx context.Context, update tgbotapi.U
 	case "📷 QR":
 		newState := repository.FlowState{Flow: repository.FlowCreateQR, Step: 0, Data: make(map[string]string)}
 		uc.stateRepo.Set(chatID, newState)
-		return uc.sendWithState(update, newState, "Masukkan API ID dari https://my.telegram.org.", nil)
+		return uc.handleCreateQR(ctx, update, newState)
 	default:
 		return uc.sendWithState(update, state, "Pilih metode login yang tersedia.", createMethodKeyboard())
 	}
@@ -153,34 +156,25 @@ func (uc *WizardUsecase) handleCreateOTP(ctx context.Context, update tgbotapi.Up
 			return uc.sendWithState(update, state, "Nomor telepon harus diawali '+'.", nil)
 		}
 		state.Data["phone"] = text
+		if uc.apiID == "" || uc.apiHash == "" {
+			uc.log.Error("Missing API credentials for OTP flow (chatID %d)", chatID)
+			uc.stateRepo.Reset(chatID)
+			return uc.sendWithState(update, repository.FlowState{}, "Konfigurasi API belum tersedia. Hubungi admin.", mainMenuKeyboard(uc.isAdmin(chatID)))
+		}
+		state.Data["api_id"] = uc.apiID
+		state.Data["api_hash"] = uc.apiHash
 		state.Step = 1
 		uc.stateRepo.Set(chatID, state)
-		return uc.sendWithState(update, state, "Masukkan API ID (angka).", nil)
-	case 1:
-		if _, err := strconv.Atoi(text); err != nil {
-			return uc.sendWithState(update, state, "API ID harus berupa angka.", nil)
-		}
-		state.Data["api_id"] = text
-		state.Step = 2
-		uc.stateRepo.Set(chatID, state)
-		return uc.sendWithState(update, state, "Masukkan API hash.", nil)
-	case 2:
-		if len(text) < 10 {
-			return uc.sendWithState(update, state, "API hash terlalu pendek.", nil)
-		}
-		state.Data["api_hash"] = text
-		state.Step = 3
-		uc.stateRepo.Set(chatID, state)
 		return uc.sendWithState(update, state, "Masukkan OTP yang kamu terima.", nil)
-	case 3:
+	case 1:
 		if len(text) < 4 {
 			return uc.sendWithState(update, state, "OTP tidak valid.", nil)
 		}
 		state.Data["otp"] = text
-		state.Step = 4
+		state.Step = 2
 		uc.stateRepo.Set(chatID, state)
 		return uc.sendWithState(update, state, "Jika kamu memakai password 2FA, kirim sekarang. Jika tidak, ketik '-'.", nil)
-	case 4:
+	case 2:
 		if text != "-" && len(text) < 4 {
 			return uc.sendWithState(update, state, "Password terlalu pendek.", nil)
 		}
@@ -215,50 +209,38 @@ func (uc *WizardUsecase) handleCreateQR(ctx context.Context, update tgbotapi.Upd
 	if state.Data == nil {
 		state.Data = make(map[string]string)
 	}
-	text := strings.TrimSpace(update.Message.Text)
-	switch state.Step {
-	case 0:
-		if _, err := strconv.Atoi(text); err != nil {
-			return uc.sendWithState(update, state, "API ID harus berupa angka.", nil)
-		}
-		state.Data["api_id"] = text
-		state.Step = 1
-		uc.stateRepo.Set(chatID, state)
-		return uc.sendWithState(update, state, "Masukkan API hash.", nil)
-	case 1:
-		if len(text) < 10 {
-			return uc.sendWithState(update, state, "API hash terlalu pendek.", nil)
-		}
-		state.Data["api_hash"] = text
-		uc.stateRepo.Set(chatID, state)
-		if err := uc.sendWithState(update, state, "QR code sedang dibuat. Scan dari aplikasi Telegram dalam 2 menit.", nil); err != nil {
-			return err
-		}
-		qrErr := uc.sendQR(update, state)
-		if qrErr != nil {
-			uc.log.Error("Failed to send QR for chatID %d: %v", chatID, qrErr)
-			return uc.sendWithState(update, state, fmt.Sprintf("Gagal membuat QR: %v", qrErr), nil)
-		}
-		session := uc.generateSessionString(state.Data)
-		payload := repository.SessionPayload{
-			TelegramID:  chatID,
-			Session:     session,
-			LoginMethod: "qr",
-			Metadata:    map[string]string{"note": "qr"},
-			SessionHash: fingerprint(session, uc.orchestratorURL),
-			RequestID:   fmt.Sprintf("qr-%d", time.Now().UnixNano()),
-			Origin:      "wizard",
-		}
-		if err := uc.orchRepo.CreateSession(ctx, payload); err != nil {
-			uc.log.Error("Failed to create session via QR for chatID %d: %v", chatID, err)
-			return uc.sendWithState(update, state, fmt.Sprintf("Gagal menyimpan sesi: %v", err), nil)
-		}
+	if uc.apiID == "" || uc.apiHash == "" {
+		uc.log.Error("Missing API credentials for QR flow (chatID %d)", chatID)
 		uc.stateRepo.Reset(chatID)
-		return uc.sendWithState(update, repository.FlowState{}, "QR berhasil diproses dan userbot aktif.", mainMenuKeyboard(uc.isAdmin(chatID)))
-	default:
-		uc.stateRepo.Reset(chatID)
-		return uc.sendMainMenu(update)
+		return uc.sendWithState(update, repository.FlowState{}, "Konfigurasi API belum tersedia. Hubungi admin.", mainMenuKeyboard(uc.isAdmin(chatID)))
 	}
+	state.Data["api_id"] = uc.apiID
+	state.Data["api_hash"] = uc.apiHash
+	uc.stateRepo.Set(chatID, state)
+	if err := uc.sendWithState(update, state, "QR code sedang dibuat. Scan dari aplikasi Telegram dalam 2 menit.", nil); err != nil {
+		return err
+	}
+	qrErr := uc.sendQR(update, state)
+	if qrErr != nil {
+		uc.log.Error("Failed to send QR for chatID %d: %v", chatID, qrErr)
+		return uc.sendWithState(update, state, fmt.Sprintf("Gagal membuat QR: %v", qrErr), nil)
+	}
+	session := uc.generateSessionString(state.Data)
+	payload := repository.SessionPayload{
+		TelegramID:  chatID,
+		Session:     session,
+		LoginMethod: "qr",
+		Metadata:    map[string]string{"note": "qr"},
+		SessionHash: fingerprint(session, uc.orchestratorURL),
+		RequestID:   fmt.Sprintf("qr-%d", time.Now().UnixNano()),
+		Origin:      "wizard",
+	}
+	if err := uc.orchRepo.CreateSession(ctx, payload); err != nil {
+		uc.log.Error("Failed to create session via QR for chatID %d: %v", chatID, err)
+		return uc.sendWithState(update, state, fmt.Sprintf("Gagal menyimpan sesi: %v", err), nil)
+	}
+	uc.stateRepo.Reset(chatID)
+	return uc.sendWithState(update, repository.FlowState{}, "QR berhasil diproses dan userbot aktif.", mainMenuKeyboard(uc.isAdmin(chatID)))
 }
 
 func (uc *WizardUsecase) handleTokenLogin(ctx context.Context, update tgbotapi.Update, state repository.FlowState) error {

@@ -33,6 +33,10 @@ func NewService(cfg config.WizardConfig, log *logger.Logger) (*Service, error) {
 		return nil, errors.New("logger is nil")
 	}
 
+	if cfg.APIID == "" || cfg.APIHash == "" {
+		return nil, errors.New("wizard API credentials are missing")
+	}
+
 	// 1. Initialize Bot API (either mock or real)
 	var bot Bot
 	if cfg.UseMock {
@@ -61,6 +65,8 @@ func NewService(cfg config.WizardConfig, log *logger.Logger) (*Service, error) {
 		bot,
 		cfg.AdminIDs,
 		cfg.OrchestratorURL,
+		cfg.APIID,
+		cfg.APIHash,
 	)
 
 	// 4. Initialize Delivery Handler

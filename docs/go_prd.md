@@ -86,7 +86,47 @@
 ## 5. Data Model (PostgreSQL)
 (Model data tetap sama: `users`, `sessions`, `reply_guard_rules`, dll.)
 
-### 5.1 Reliability Practices (Go-centric)
+### 5.1 ERD Basis Data
+```
+┌────────────┐        ┌──────────────┐
+│   users    │1     * │   sessions   │
+│------------│◄──────┤--------------│
+│ id (PK)    │        │ id (PK)      │
+│ telegram_id│        │ user_id (FK) │
+│ username   │        │ telegram_id  │
+│ plan       │        │ status       │
+└────────────┘        └──────────────┘
+        │1                     │*
+        │                      │
+        │        ┌──────────────────────────┐
+        ├────────┤ reply_guard_rules        │
+        │        │ id (PK)                  │
+        │        │ user_id (FK)             │
+        │        │ status                   │
+        │        └──────────────────────────┘
+        │
+        │        ┌──────────────────────────┐
+        ├────────┤ broadcast_jobs           │
+        │        │ id (PK)                  │
+        │        │ user_id (FK)             │
+        │        │ enabled                  │
+        │        └──────────────────────────┘
+        │
+        │        ┌──────────────────────────┐
+        └────────┤ usage_stats              │
+                 │ id (PK)                  │
+                 │ user_id (FK)             │
+                 │ command / count          │
+                 └──────────────────────────┘
+```
+
+**Catatan Relasi**
+- `users` memegang identitas utama setiap pemilik userbot (`telegram_id` unik) dan menjadi sumber FK untuk tabel lain.
+- `sessions` menyimpan session string terenkripsi per userbot; `user_id` opsional agar bisa menyimpan sesi sementara sebelum profil pengguna dibuat.
+- `reply_guard_rules`, `broadcast_jobs`, dan `usage_stats` bergantung pada `users` dengan relasi one-to-many dan akan ikut terhapus saat user dihapus (cascade pada sebagian tabel).
+- `sessions.session_hash`, `broadcast_jobs.targets_json`, serta kolom JSON/metadata lain dipakai orchestrator untuk otomasi lanjutan tanpa menambah tabel baru.
+
+### 5.2 Reliability Practices (Go-centric)
 - **Logging**: Gunakan logger `pkg/logger` secara konsisten di seluruh aplikasi. Pastikan untuk mencatat semua kesalahan, peringatan, dan alur kontrol penting.
 - **Context Propagation**: Teruskan `context.Context` di semua pemanggilan fungsi untuk timeout dan pembatalan yang benar.
 - **Error Handling**: Gunakan error wrapping (`fmt.Errorf("...: %w", err)`) agar mudah di-trace melalui log.
